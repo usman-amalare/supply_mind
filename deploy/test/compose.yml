@@ -1,0 +1,16 @@
+# Optional disposable PostgreSQL for tests when TEST_DATABASE_URL is set.
+# The default test path uses Testcontainers and does not need this file.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: supplymind
+      POSTGRES_PASSWORD: supplymind
+      POSTGRES_DB: supplymind_test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supplymind -d supplymind_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 20

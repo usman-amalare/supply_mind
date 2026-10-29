@@ -1,0 +1,62 @@
+[project]
+name = "supplymind"
+version = "0.1.0"
+description = "SupplyMind v1 API"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "alembic>=1.14",
+    "argon2-cffi>=23.1",
+    "fastapi>=0.115",
+    "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.6",
+    "pydantic>=2.10",
+    "sqlalchemy>=2.0.36",
+    "uvicorn[standard]>=0.32",
+]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.8",
+    "freezegun>=1.5",
+    "httpx>=0.27",
+    "mypy>=1.13",
+    "pip-audit>=2.7",
+    "pytest-asyncio>=0.24",
+    "pytest>=8.3",
+    "ruff>=0.8",
+    "testcontainers[postgres]>=4.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["supplymind", "tests"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+addopts = "-ra"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["supplymind"]
+warn_unused_ignores = true
+
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"]
+skips = ["B101"]

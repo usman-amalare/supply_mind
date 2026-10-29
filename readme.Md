@@ -10,6 +10,17 @@ Instead of relying solely on fixed reorder thresholds or guesswork, SupplyMind c
 
 > **Product principle:** SupplyMind recommends. Business owners decide. The platform does not automatically purchase inventory or send purchase orders to vendors.
 
+## Current repository status
+
+**As of 2026-10-29 this repository is not a running SupplyMind application.** It holds the product description, the master build prompt, the product brief, and the start of a backend-first build.
+
+- Engineering rules for agents: `AGENTS.md`
+- What has actually been built and verified: `IMPLEMENTATION_PLAN.md`
+- Decisions and specification gaps: `docs/DECISIONS.md`
+- Target boundaries: `ARCHITECTURE.md`
+
+The checked-in master prompt ends at Section 13.2. Sections 14–16 and Appendix A are not in that file. The Getting Started commands below describe the intended workflow. Use the implementation ledger to see which commands have been run.
+
 ---
 
 ## Table of Contents
@@ -31,6 +42,7 @@ Instead of relying solely on fixed reorder thresholds or guesswork, SupplyMind c
 - [Current Scope and Limitations](#current-scope-and-limitations)
 - [Development Roadmap](#development-roadmap)
 - [Documentation](#documentation)
+- [Current repository status](#current-repository-status)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -578,6 +590,7 @@ The implementation ledger must distinguish completed work from pending work and 
 
 The following documents are intended to provide more detailed engineering guidance:
 
+- `AGENTS.md` — instructions for coding agents working in this repository.
 - `ARCHITECTURE.md` — system boundaries, modules, and data flow.
 - `IMPLEMENTATION_PLAN.md` — staged execution and verification ledger.
 - `docs/DECISIONS.md` — architecture decisions, assumptions, and trade-offs.

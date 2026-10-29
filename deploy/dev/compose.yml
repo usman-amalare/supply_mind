@@ -1,0 +1,26 @@
+# Local dependencies only. This file does not build or deploy the application.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: supplymind
+      POSTGRES_PASSWORD: supplymind
+      POSTGRES_DB: supplymind
+    ports:
+      - "5432:5432"
+    volumes:
+      - supplymind_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supplymind -d supplymind"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  supplymind_pg:
