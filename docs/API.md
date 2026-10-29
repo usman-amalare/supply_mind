@@ -109,3 +109,95 @@ Body: `notification_prefs` with `recipient_emails` (at most 20) and `cooldown_ho
 Missing settings for the caller's own workspace return `404` `not_found`. Another workspace's settings are not addressable on these routes.
 
 A session whose user has no membership, or more than one, receives `403` `workspace_unavailable`.
+
+## Catalog
+
+All catalog routes require the session cookie. Mutations require the CSRF header. Every query and write is scoped to the session workspace. A client `workspace_id` is rejected on write bodies (`extra=forbid`) and is not used as a filter. Another workspace's id returns `404` `not_found`.
+
+List responses use `{items, page, page_size, total}`. Default `page=1`, `page_size=20`, maximum `page_size=100`. Ordering is by name then id for vendors, and by sku then id for products. Optional `q` searches name/contact (vendors) or sku/name (products). Optional `include_archived=true` includes soft-archived rows; the default is active rows only. `GET` by id still returns an archived row in the caller's workspace.
+
+### Vendors
+
+#### `POST /api/v1/vendors`
+
+Body: `name`, optional `contact_name`, `contact_email`, `contact_phone`, `typical_lead_time_days` (0–3650), `imports_goods` (default false). `201` returns the vendor view.
+
+#### `GET /api/v1/vendors`
+
+Paginated list. Query: `page`, `page_size`, `include_archived`, `q`.
+
+#### `GET /api/v1/vendors/{vendor_id}`
+
+Returns one vendor, including when archived.
+
+#### `PATCH /api/v1/vendors/{vendor_id}`
+
+Updates allowed fields on an active vendor. Archived vendors return `404`.
+
+#### `POST /api/v1/vendors/{vendor_id}/archive`
+
+Sets `archived_at`. Idempotent if already archived. `409` `vendor_in_use` when the vendor is still primary or backup for any active product. Relationships are not deleted. There is no restore endpoint in this stage.
+
+### Products
+
+#### `POST /api/v1/products`
+
+Body: `sku`, `name`, `unit`, `reorder_threshold` (≥ 0), optional `current_stock` (default 0), optional `unit_cost` with `unit_cost_currency` (both required together). `201` returns the product. `409` `sku_conflict` when `lower(sku)` already exists in the workspace, including for archived products.
+
+`current_stock` may be set only on create. Create always writes one `stock_adjustments` row with reason `initial` in the same transaction: `delta` and `balance_after` equal the opening quantity (including explicit or default zero). A failed ledger insert rolls back the product.
+
+#### `GET /api/v1/products`
+
+Paginated list. Query: `page`, `page_size`, `include_archived`, `q`.
+
+#### `GET /api/v1/products/{product_id}`
+
+Returns one product, including when archived.
+
+#### `PATCH /api/v1/products/{product_id}`
+
+Updates `sku`, `name`, `unit`, `reorder_threshold`, and unit cost fields on an active product. `current_stock` is rejected. `clear_unit_cost: true` clears both cost fields. `409` `sku_conflict` on a case-insensitive clash.
+
+#### `POST /api/v1/products/{product_id}/archive`
+
+Sets `archived_at`. Idempotent if already archived. Product–vendor links remain. There is no restore endpoint in this stage.
+
+### Product vendors
+
+Roles are path values `primary` or `backup`. At most one of each per product. The same vendor cannot hold both roles.
+
+#### `GET /api/v1/products/{product_id}/vendors`
+
+Returns the product's links with `vendor_name` and `vendor_archived_at`.
+
+#### `PUT /api/v1/products/{product_id}/vendors/{role}`
+
+Body: `vendor_id`. Assigns or replaces that role. Replacing primary removes the previous primary first. The same vendor already in that role is a no-op success. `409` `vendor_role_conflict` when that vendor already holds the other role. `409` `product_vendor_conflict` when a uniqueness constraint fails (including concurrent primary assignment). The vendor and product must be active and in the session workspace.
+
+#### `DELETE /api/v1/products/{product_id}/vendors/{role}`
+
+Removes that role. `204`. Missing role returns `404`.
+
+### Stock ledger
+
+Quantities use `NUMERIC(14,3)`. Actor, workspace, and `balance_after` are server-derived. There is no update or delete endpoint for ledger rows. Corrections are new rows with reason `correction`.
+
+Allowed public adjustment reasons: `receipt`, `sale_deduction`, `damage`, `correction`, `manual_count`. Reason `initial` is reserved for product create and the Stage 4 baseline backfill.
+
+Sign rules: `receipt` requires a positive delta; `sale_deduction` and `damage` require a negative delta; `correction` and `manual_count` accept either sign. Zero deltas are rejected. An adjustment that would leave `current_stock` below zero returns `409` `insufficient_stock`. Archived products return `404` (same non-disclosing shape as a missing product).
+
+`source_ref` is optional free text (max 200). This endpoint does not treat it as an idempotency key. Duplicate `initial` rows are blocked by a partial unique index.
+
+#### `POST /api/v1/products/{product_id}/stock-adjustments`
+
+Authenticated + CSRF. Body: `delta`, `reason`, optional `note` (max 2000), optional `source_ref`. `201` returns the committed adjustment (`id`, `product_id`, `delta`, `reason`, `note`, `actor_user_id`, `balance_after`, `source_ref`, `created_at`). Locks the product row, updates `products.current_stock`, appends one ledger row, and writes audit action `stock_adjusted` in one transaction.
+
+Errors: `404` `not_found`; `409` `insufficient_stock` / `ledger_uninitialized` / `ledger_conflict`; `422` `validation_error` / `invalid_adjustment`.
+
+#### `GET /api/v1/products/{product_id}/stock-adjustments`
+
+Authenticated. Paginated newest-first (`created_at` desc, `id` desc). Query: `page`, `page_size` (max 100), optional `reason`. Envelope `{items, page, page_size, total}`.
+
+#### `GET /api/v1/products/{product_id}/stock`
+
+Authenticated. Returns `{product_id, current_stock, ledger_status, latest_balance_after}`. `ledger_status` is `ok` when the latest ledger `balance_after` matches `current_stock`, `uninitialized` when there are no ledger rows, or `mismatch` when they disagree. This endpoint never rewrites stock or the ledger.

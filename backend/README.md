@@ -1,8 +1,8 @@
 # SupplyMind backend
 
-Python 3.12 service for SupplyMind. This package contains configuration, the application factory, the Section 8 schema, and Stage 2 identity: registration, sessions, CSRF, and the current workspace. It does not implement inventory operations or the risk engine.
+Python 3.12 service for SupplyMind. This package contains configuration, the application factory, the Section 8 schema, identity, and the Stage 3 catalog (vendors, products, primary/backup links). It does not implement inventory movements or the risk engine.
 
-Identity contracts are in `docs/API.md`. Session and CSRF rules are in `docs/SECURITY.md`. Apply the existing migration with `uv run alembic upgrade head`. Stage 2 did not add a revision.
+Contracts are in `docs/API.md`. Security rules are in `docs/SECURITY.md`. Apply the existing migration with `uv run alembic upgrade head`. Stages 2 and 3 did not add a revision.
 
 Run commands from the repository root with `make`, or from `backend/` with `uv`. GNU make was not available on the machine that created this tree; the ledger records the commands that were actually run.
 

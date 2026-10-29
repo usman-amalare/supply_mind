@@ -222,3 +222,31 @@ Account tables are not tenant tables. `AccountRepository` and `AuditRepository.a
 Application-layer tenancy is not PostgreSQL row-level security. The full Section 9 isolation suite for products, vendors, orders, imports, sales, alerts, snapshots, explanations, usage, and notifications is a gate for the stages that add those routes. A test already fails if a new non-auth `/api/v1` route has no isolation entry. Settings are covered now.
 
 Email shape is assumed: trimmed, casefolded, one `@`, and a dotted domain. Notification cooldown is 1–168 hours. At most 20 recipient emails are stored. Those bounds are not in the master prompt.
+
+## D-018 — Stage 3 catalog archive, stock create, and relationships
+
+**Status:** Accepted, with assumed operational bounds marked below. **Date:** 2026-10-29.
+
+No new Alembic revision. The Stage 1 schema already has `vendors`, `products`, `product_vendors`, case-insensitive SKU uniqueness, composite FKs, and one-primary / one-backup partial unique indexes.
+
+Routes are plural nouns under `/api/v1`: `/vendors`, `/products`, and `/products/{id}/vendors/{role}` for primary/backup assignment. Role is a path parameter. The body for assign carries only `vendor_id`.
+
+`current_stock` may be set on create only. Product PATCH rejects `current_stock`. Create writes the products column. Stage 4 superseded the “no ledger row on create” behaviour: see D-019. Opening balances created before Stage 4 are baselined by migration `0002_stock_ledger_baseline`, not reconstructed as historical movements.
+
+Vendor archive is soft. Archiving a vendor that is still primary or backup for any **active** product returns `409` `vendor_in_use`. Links are not deleted. After the linked products are archived (or the role is removed), the vendor may be archived. Product archive is soft and leaves links in place. Repeat archive is idempotent. Restore is not implemented.
+
+Lists exclude archived rows unless `include_archived=true`. `GET` by id returns archived rows in the caller's workspace. Archived SKUs remain unique per workspace.
+
+Lead time is limited to 0–3650 days at the API (**Assumed** operational cap; the database only requires ≥ 0). Contact fields are the assumed Stage 1 columns. Unit cost requires a three-letter currency when present.
+
+Concurrent primary assignment is resolved by the partial unique index; losers surface as `409` `product_vendor_conflict` after IntegrityError.
+
+## D-019 — Stage 4 stock ledger, opening stock, and negative-stock policy
+
+**Status:** Accepted. **Date:** 2026-10-29.
+
+Migration `0002_stock_ledger_baseline` (revises `0001_initial_schema`) adds nonnegative checks on `products.current_stock` and `stock_adjustments.balance_after`, a partial unique index so each product has at most one `reason=initial` row, and an idempotent backfill: products with no ledger rows receive one baseline `initial` entry (`delta` = `balance_after` = current quantity, `source_ref` = `stage4_backfill`, note stating it is a Stage 4 baseline). Quantities are unchanged. Downgrade drops the index and check constraints and keeps baseline rows.
+
+Product create always inserts that sole `initial` row in the same transaction as the product, including when opening stock is omitted or zero. Public `POST …/stock-adjustments` rejects `initial`. Zero deltas are rejected. `receipt` must be positive; `sale_deduction` and `damage` must be negative; `correction` and `manual_count` are signed deltas (not absolute counts).
+
+Negative resulting stock is rejected with `409` `insufficient_stock` (conservative Stage 4 rule; the master prompt did not specify clamp-to-zero). Adjustments use `FOR UPDATE` on the product row. `source_ref` is not an idempotency key for this endpoint. `GET …/stock` reports `ok` / `uninitialized` / `mismatch` and never auto-repairs. Append-only enforcement remains the Stage 1 triggers plus repository shape; no ledger edit/delete API.

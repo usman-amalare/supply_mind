@@ -14,6 +14,37 @@ ISOLATION_TESTS = {
     ("PATCH", "/api/v1/workspace"): "test_workspace_body_cannot_switch_tenant",
     ("GET", "/api/v1/workspace/settings"): "test_settings_are_isolated_between_workspaces",
     ("PATCH", "/api/v1/workspace/settings"): "test_settings_patch_cannot_change_another_workspace",
+    ("GET", "/api/v1/vendors"): "test_vendors_list_cannot_see_other_workspace",
+    ("POST", "/api/v1/vendors"): "test_catalog_create_rejects_foreign_workspace_id",
+    ("GET", "/api/v1/vendors/{vendor_id}"): "test_vendors_list_cannot_see_other_workspace",
+    ("PATCH", "/api/v1/vendors/{vendor_id}"): "test_vendors_list_cannot_see_other_workspace",
+    ("POST", "/api/v1/vendors/{vendor_id}/archive"): "test_vendors_list_cannot_see_other_workspace",
+    ("GET", "/api/v1/products"): "test_products_list_cannot_see_other_workspace",
+    ("POST", "/api/v1/products"): "test_catalog_create_rejects_foreign_workspace_id",
+    ("GET", "/api/v1/products/{product_id}"): "test_products_list_cannot_see_other_workspace",
+    ("PATCH", "/api/v1/products/{product_id}"): "test_products_list_cannot_see_other_workspace",
+    (
+        "POST",
+        "/api/v1/products/{product_id}/archive",
+    ): "test_products_list_cannot_see_other_workspace",
+    ("GET", "/api/v1/products/{product_id}/vendors"): "test_cannot_link_foreign_vendor_or_product",
+    (
+        "PUT",
+        "/api/v1/products/{product_id}/vendors/{role}",
+    ): "test_product_vendors_assign_isolation",
+    (
+        "DELETE",
+        "/api/v1/products/{product_id}/vendors/{role}",
+    ): "test_product_vendors_remove_isolation",
+    (
+        "POST",
+        "/api/v1/products/{product_id}/stock-adjustments",
+    ): "test_stock_routes_are_isolated",
+    (
+        "GET",
+        "/api/v1/products/{product_id}/stock-adjustments",
+    ): "test_stock_routes_are_isolated",
+    ("GET", "/api/v1/products/{product_id}/stock"): "test_stock_summary_isolation",
 }
 
 
@@ -75,8 +106,11 @@ def test_unsafe_routes_require_csrf_or_are_explicitly_exempt() -> None:
 
 
 def test_new_api_routes_are_auth_or_have_an_isolation_test() -> None:
+    import tests.integration.test_catalog as catalog_tests
     import tests.integration.test_identity as identity_tests
+    import tests.integration.test_inventory as inventory_tests
 
+    modules = (identity_tests, catalog_tests, inventory_tests)
     app = create_app(build_settings())
     api_routes = [
         (path, route) for path, route in _iter_api_routes(app) if path.startswith("/api/v1")
@@ -90,7 +124,7 @@ def test_new_api_routes_are_auth_or_have_an_isolation_test() -> None:
                 continue
             test_name = ISOLATION_TESTS.get((method, path))
             assert test_name is not None, f"{method} {path} has no isolation test"
-            assert hasattr(identity_tests, test_name)
+            assert any(hasattr(module, test_name) for module in modules), test_name
 
 
 def test_argon2_defaults_match_the_rfc9106_low_memory_profile() -> None:

@@ -1,1 +1,1 @@
-"""Products and vendors. HTTP routes are not implemented."""
+"""Products, vendors, and primary/backup product–vendor links."""

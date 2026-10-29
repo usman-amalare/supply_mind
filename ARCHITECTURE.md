@@ -1,6 +1,6 @@
 # Architecture
 
-**Status:** the boundaries below are the locked design from master-prompt Sections 5–7. The backend platform and Stage 2 identity are implemented. Everything else in this document is **Proposed** unless a section says **Implemented**.
+**Status:** the boundaries below are the locked design from master-prompt Sections 5–7. The backend platform through Stage 4 stock ledger is implemented. Everything else in this document is **Proposed** unless a section says **Implemented**.
 
 ## System
 
@@ -18,18 +18,21 @@ Browser (not started)
     |  HTTPS, cookie session, CSRF header on mutations
     v
 FastAPI  /api/v1          Implemented: process, config, probes, error envelope,
-    |                               identity, sessions, CSRF, current workspace
-    |                     Proposed: catalog, inventory, sales, orders,
-    |                               signals, risk, alerts, explanations, notifications
+    |                               identity, sessions, CSRF, current workspace,
+    |                               vendors, products, primary/backup links,
+    |                               stock adjustments and stock summary
+    |                     Proposed: sales, orders, signals, risk, alerts,
+    |                               explanations, notifications
     v
-PostgreSQL 16             Implemented: schema and append-only triggers
+PostgreSQL 16             Implemented: schema, append-only triggers,
+    |                               Stage 4 ledger baseline migration
     ^
 Worker (not started) -----+---- OpenAI (unverified) and FX source (unverified)
 ```
 
 Tenancy is enforced in the application: a `TenantContext`, repositories that require it, composite foreign keys `(workspace_id, parent_id)`, and tests that try cross-workspace references. PostgreSQL row-level security is a future option and is not built.
 
-The workspace id used for authorisation comes from the server session, not from a body or URL field. That path is **Implemented** for the current user and workspace settings. Resource ids for later tenant data will be loaded through tenant-scoped repositories so another workspace's id is a 404. Those resource routes are not built. The schema rules that make cross-workspace foreign keys fail are **Implemented** and covered by database tests. PostgreSQL row-level security is still not enabled.
+The workspace id used for authorisation comes from the server session, not from a body or URL field. That path is **Implemented** for the current user, workspace settings, vendors, products, product–vendor links, stock adjustments, and stock summary. Resource ids for later tenant data will be loaded through tenant-scoped repositories so another workspace's id is a 404. Sales and order routes are not built. The schema rules that make cross-workspace foreign keys fail are **Implemented** and covered by database tests. PostgreSQL row-level security is still not enabled.
 
 ## Backend layout
 
@@ -41,12 +44,14 @@ The workspace id used for authorisation comes from the server session, not from 
 - `db/` — engine, session, metadata, model registry
 - `core/` — password hashing, token hashing, CSRF compare, IP HMAC, tenancy type, errors, JSON logs, in-process rate limiter, pagination, ids
 - `modules/*/models.py` — Section 8 tables
-- `migrations/` — initial revision, unchanged in Stage 2
+- `migrations/` — `0001_initial_schema`, `0002_stock_ledger_baseline`
 - `modules/identity/` and `modules/workspaces/` — registration, sessions, CSRF, current workspace, notification prefs
-- `modules/audit/repository.py` — append-only auth and settings events
-- `backend/tests/` — unit tests, PostgreSQL schema tests, and identity tests
+- `modules/catalog/` — vendors, products, primary/backup links, soft archive; create initializes opening stock via inventory
+- `modules/inventory/` — append-only stock adjustments, product stock summary, `FOR UPDATE` balance updates
+- `modules/audit/repository.py` — append-only auth, settings, catalog, and stock events
+- `backend/tests/` — unit tests, PostgreSQL schema/migration tests, identity, catalog, and inventory tests
 
-**Not started:** catalog, inventory, sales, orders, signals, risk, alerts, explanations, notifications, the worker, and the isolation suite for those future resources.
+**Not started:** sales, orders, signals, risk, alerts, explanations, notifications, the worker, and the isolation suite for those future resources.
 
 Routers validate and authorise. Services hold business rules and take a `Clock`. Workspace repositories are the code that reads tenant rows, and they require `TenantContext`. Account tables are not tenant tables (D-017). Business code does not call `datetime.now()`.
 
@@ -64,7 +69,7 @@ Routers validate and authorise. Services hold business rules and take a `Clock`.
 
 Tenant tables carry `workspace_id`. Child rows reference parents with composite foreign keys. Money and quantities use the numeric types in D-005. Timestamps are `timestamptz` in UTC. Business dates are `date`. Products and vendors use `archived_at` rather than hard deletes.
 
-`stock_adjustments` and `audit_log` are append-only at the database for `UPDATE` and `DELETE`.
+`stock_adjustments` and `audit_log` are append-only at the database for `UPDATE` and `DELETE`. Product create and stock adjustments keep `products.current_stock` aligned with the latest committed ledger `balance_after` (D-019).
 
 The risk engine, when built, stays behind `modules/risk`. A language-model adapter may only explain a stored snapshot. Numbers in the UI will be read from the snapshot, not from model prose.
 

@@ -12,7 +12,7 @@ Instead of relying solely on fixed reorder thresholds or guesswork, SupplyMind c
 
 ## Current repository status
 
-**As of 2026-10-29 the backend can register an owner, sign them in, and read their workspace.** It is not the full SupplyMind product. Inventory, risk, alerts, email, and the frontend are not built.
+**As of 2026-10-29 the backend can register an owner, manage vendors and products, and assign primary/backup vendors.** It is not the full SupplyMind product. Inventory movements, risk, alerts, email, and the frontend are not built.
 
 - Engineering rules for agents: `AGENTS.md`
 - What has actually been built and verified: `IMPLEMENTATION_PLAN.md`

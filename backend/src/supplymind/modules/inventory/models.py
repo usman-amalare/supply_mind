@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
@@ -33,6 +34,7 @@ class StockAdjustment(UUIDPrimaryKeyMixin, WorkspaceIdMixin, TimestampMixin, Bas
             name="fk_stock_adjustments_product",
         ),
         CheckConstraint("char_length(reason) > 0", name="reason_present"),
+        CheckConstraint("balance_after >= 0", name="balance_after_non_negative"),
     )
 
     product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
@@ -52,4 +54,11 @@ Index(
     StockAdjustment.workspace_id,
     StockAdjustment.product_id,
     StockAdjustment.created_at,
+)
+Index(
+    "uq_stock_adjustments_one_initial",
+    StockAdjustment.workspace_id,
+    StockAdjustment.product_id,
+    unique=True,
+    postgresql_where=text("reason = 'initial'"),
 )

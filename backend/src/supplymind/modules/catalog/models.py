@@ -52,6 +52,7 @@ class Product(UUIDPrimaryKeyMixin, WorkspaceIdMixin, TimestampMixin, Base):
         CheckConstraint("char_length(btrim(sku)) > 0", name="sku_present"),
         CheckConstraint("char_length(btrim(name)) > 0", name="name_present"),
         CheckConstraint("reorder_threshold >= 0", name="reorder_threshold_non_negative"),
+        CheckConstraint("current_stock >= 0", name="current_stock_non_negative"),
         CheckConstraint(
             "(unit_cost IS NULL AND unit_cost_currency IS NULL) OR "
             "(unit_cost IS NOT NULL AND unit_cost >= 0 AND unit_cost_currency ~ '^[A-Z]{3}$')",

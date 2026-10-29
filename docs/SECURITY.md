@@ -34,7 +34,9 @@ A workspace is the tenant. The id is loaded from the authenticated user's owner 
 
 A user with no membership, or with more than one, is denied. Settings for the caller's workspace are the only settings these routes can read or change. This is application-layer tenancy. PostgreSQL row-level security is not enabled.
 
-Section 9 also requires an isolation test for every later resource type: products, vendors, orders, imports, sales, alerts, snapshots, explanations, usage, and notifications. Those routes do not exist yet. `tests/unit/test_auth_routes.py` fails if a new `/api/v1` route outside `/api/v1/auth/` has no named isolation test. That suite is a gate for the stage that adds the route, not a claim that those resources were tested in Stage 2.
+Catalog vendors, products, and product–vendor links are isolated in Stage 3. Stock adjustments and product stock summaries are isolated in Stage 4. Foreign ids return `404`. List endpoints never mix workspaces. Soft archive keeps rows; archived SKUs stay reserved by the case-insensitive unique index. Adjustments on archived products are refused with the same `404`.
+
+Section 9 also requires an isolation test for every later resource type: orders, imports, sales, alerts, snapshots, explanations, usage, and notifications. Those routes do not exist yet. `tests/unit/test_auth_routes.py` fails if a new `/api/v1` route outside `/api/v1/auth/` has no named isolation test.
 
 ## Password reset and email
 
@@ -44,7 +46,11 @@ No email is sent. The token is returned only to a delivery method the HTTP layer
 
 ## Audit
 
-Sign-in, logout, revoke-all, registration, password reset, and the Stage 2 settings changes append to `audit_log`. Failed login rows do not store the submitted email or password. The audit table is append-only for `UPDATE` and `DELETE`. `TRUNCATE` by the table owner is still not blocked.
+Sign-in, logout, revoke-all, registration, password reset, settings changes, catalog create/update/archive/link changes, and successful stock adjustments append to `audit_log`. Stock audit rows record actor, workspace, product balance before/after, delta, reason, and optional `source_ref`. Failed login rows do not store the submitted email or password. The audit table is append-only for `UPDATE` and `DELETE`. `TRUNCATE` by the table owner is still not blocked.
+
+## Stock ledger
+
+`stock_adjustments` is append-only at the database: triggers reject `UPDATE` and `DELETE` (Stage 1). The repository exposes append and read only. Actor identity and `balance_after` come from the authenticated session and locked product row, not from the client. Concurrent adjustments on one product serialize with `SELECT … FOR UPDATE`. A rejected adjustment (including insufficient stock) rolls back balance, ledger, and transactional audit together.
 
 ## Rate limiting and addresses
 

@@ -73,14 +73,32 @@ Registration creates a user, an `Africa/Lagos` / `NGN` workspace, an owner membe
 
 **Not acceptance of this stage:** email delivery of password-reset tokens, email verification, catalog data, or the Section 9 isolation suite for resources that do not have routes yet. Application-layer tenancy is not row-level security.
 
+## Stage 3 — Vendors, products, primary/backup links, and archive
+
+**Status:** Implemented. **Date:** 2026-10-29.
+
+Vendors and products support create, read, list (paginated), update, and soft archive. SKU uniqueness is case-insensitive per workspace. Product PATCH cannot change `current_stock`; create may set an opening balance. Primary and backup vendors are assigned under `/api/v1/products/{id}/vendors/{role}`. Archiving a vendor that is still linked to an active product returns `409`. Catalog mutations append audit rows. No migration was added in Stage 3. Opening-stock ledger rows are Stage 4 (D-019).
+
+**Evidence:** `docs/API.md`, D-018, and the Stage 3 command log. Before these changes, `uv run pytest` was **74 passed**. After them, **95 passed**, including Stage 1 schema and Stage 2 identity tests.
+
+**Not acceptance of this stage (historical):** stock adjustments, orders, sales import, restore-from-archive, or isolation for routes that do not exist yet. Stock adjustments are Stage 4.
+
+## Stage 4 — Append-only stock adjustments and ledger balance
+
+**Status:** Implemented. **Date:** 2026-10-29.
+
+Product create always writes one `initial` ledger row with the opening quantity in the same transaction. Migration `0002_stock_ledger_baseline` backfills a labelled baseline for products that had stock without ledger rows, without changing quantities. `POST /api/v1/products/{id}/stock-adjustments` locks the product, updates `current_stock`, appends one ledger row, and audits in one transaction. Negative resulting stock is rejected (`insufficient_stock`). Concurrent deductions are serialized with `FOR UPDATE`. Ledger `UPDATE`/`DELETE` remain blocked by Stage 1 triggers. History and stock-summary read APIs are tenant-scoped. See D-019.
+
+**Evidence:** `docs/API.md`, `docs/SECURITY.md`, D-019, and the Stage 4 command log. Before these changes, `uv run pytest` was **95 passed**. After them, **113 passed**, including Stages 1–3 and inventory concurrency, append-only, migration upgrade/downgrade/re-upgrade, and isolation coverage for the new routes.
+
+**Not acceptance of this stage:** orders, sales import, restore-from-archive, automatic repair of mismatched balances, or a general request-idempotency framework for adjustments.
+
 ## Later stages (Proposed, reconstructed)
 
 Do not start a stage until the previous one's acceptance criteria are recorded as passed.
 
 | Stage | Objective | Prerequisites |
 |---|---|---|
-| 3 | Vendors, products, primary/backup links, archive | Stage 2 |
-| 4 | Append-only stock adjustments and ledger balance | Stage 3 |
 | 5 | Orders, delivery, receipt adjustments, vendor lead-time inputs | Stage 4 |
 | 6 | Sales CSV upload, preview, commit, coverage, optional stock deduction defaulting off | Stage 4 |
 | 7 | Job queue and worker process | Stage 1 schema; needed before async risk, mail, and explanations |
@@ -110,13 +128,16 @@ The product brief's pilot (3–5 businesses for 4 weeks) and the "Naira rate upd
 - No seasonal dates are seeded. Dates must be cited or marked `needs_verification`. None were invented.
 - Password-reset email is not sent. The token API exists; delivery is Stage 13 (D-017).
 - Email verification is not implemented.
-- The Section 9 isolation suite for products, vendors, orders, imports, sales, alerts, snapshots, explanations, usage, and notifications waits for those routes. Settings are covered.
+- Vendor and product restore-from-archive is not implemented.
+- Stock `source_ref` is not an idempotency key; only one `initial` per product is enforced (D-019).
+- Detected ledger `mismatch` is reported, not auto-repaired.
+- The Section 9 isolation suite for orders, imports, sales, alerts, snapshots, explanations, usage, and notifications waits for those routes. Settings, vendors, products, product–vendor links, stock adjustments, and stock summary are covered.
 - Auth rate limits are in-process only and use the socket address, not a forwarded client IP.
 - `TRUNCATE` on append-only tables is not blocked (D-011).
 
 ## Next valid stage
 
-Stage 3 — vendors, products, primary and backup links, and archive. Do not start frontend screens. New tenant routes must add an isolation test or `tests/unit/test_auth_routes.py` fails.
+Stage 5 — orders, delivery, receipt adjustments, vendor lead-time inputs. Do not start frontend screens. New tenant routes must add an isolation test or `tests/unit/test_auth_routes.py` fails.
 
 ## Command log
 
@@ -162,3 +183,33 @@ Commands were run from `backend/` unless noted. GNU `make` is still not installe
 The same Starlette `TestClient` / `httpx` deprecation warning remains. No package was added for it. No dependency was added; `uv.lock` was not changed.
 
 An intermediate identity pytest run failed 5 tests because a second registration in the same client sent the first session cookie and revoked it. The tests were corrected. The 74-passed run is the one above.
+
+### Measured 2026-10-29 — Stage 3
+
+Commands were run from `backend/` unless noted. GNU `make` is still not installed.
+
+- Before catalog changes: `uv run pytest` — exit 0. **74 passed**, 1 warning, 24.74s.
+- `uv run ruff check src tests migrations` — exit 0 (`All checks passed`).
+- `uv run ruff format --check src tests migrations` — exit 0 (88 files already formatted).
+- `uv run mypy` — exit 0 (`Success: no issues found in 69 source files`).
+- `uv run bandit -c pyproject.toml -r src/supplymind` — exit 0. No issues identified. 3864 lines of code scanned.
+- `uv run pip-audit` — exit 0. `No known vulnerabilities found`. The local project `supplymind` is not on PyPI and was skipped.
+- `uv run pytest` — exit 0. **95 passed**, 1 warning, 21.49s. Includes Stage 1 schema upgrade/downgrade/re-upgrade and Stage 2 identity tests. No Alembic revision was added. `0001_initial_schema` was not edited.
+- From the repository root: `docker compose -f deploy/dev/compose.yml config --quiet` and the same for `deploy/test/compose.yml` — exit 0.
+
+The Starlette `TestClient` / `httpx` deprecation warning remains. No dependency was added; `uv.lock` was not changed.
+
+### Measured 2026-10-29 — Stage 4
+
+Commands were run from `backend/` unless noted. GNU `make` is still not installed.
+
+- Before stock-ledger changes in this verification pass: Stage 3 baseline was **95 passed**.
+- `uv run ruff check src tests migrations` — exit 0 (`All checks passed`).
+- `uv run ruff format --check src tests migrations` — exit 0 (94 files already formatted).
+- `uv run mypy` — exit 0 (`Success: no issues found in 73 source files`).
+- `uv run bandit -c pyproject.toml -r src/supplymind` — exit 0. No issues identified. 4331 lines of code scanned.
+- `uv run pip-audit` — exit 0. `No known vulnerabilities found`. The local project `supplymind` is not on PyPI and was skipped.
+- `uv run pytest` — exit 0. **113 passed**, 1 warning, 26.14s. Includes Stage 1 schema tests, Stage 2 identity, Stage 3 catalog, inventory concurrency / append-only / rollback, and `0002_stock_ledger_baseline` upgrade/downgrade/re-upgrade. `0001_initial_schema` was not edited.
+- From the repository root: `docker compose -f deploy/dev/compose.yml config --quiet` and the same for `deploy/test/compose.yml` — exit 0.
+
+The Starlette `TestClient` / `httpx` deprecation warning remains. No dependency was added for Stage 4.
