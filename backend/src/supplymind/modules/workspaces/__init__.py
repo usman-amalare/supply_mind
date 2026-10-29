@@ -1,1 +1,1 @@
-"""Workspaces, memberships, and settings. HTTP routes are not implemented."""
+"""Workspaces, owner memberships, and workspace settings."""

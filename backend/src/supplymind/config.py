@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     session_absolute_timeout_hours: int = Field(default=12, gt=0)
     session_idle_timeout_hours: int = Field(default=1, gt=0)
     csrf_header_name: str = "X-CSRF-Token"
+    # RFC 9106 low-memory Argon2id profile (argon2-cffi PasswordHasher default).
+    argon2_time_cost: int = Field(default=3, ge=1, le=10)
+    argon2_memory_cost: int = Field(default=65536, ge=8192, le=1_048_576)
+    argon2_parallelism: int = Field(default=4, ge=1, le=16)
+    password_reset_ttl_minutes: int = Field(default=30, ge=5, le=120)
+    auth_rate_limit_attempts: int = Field(default=20, ge=1, le=1000)
+    auth_rate_limit_window_seconds: int = Field(default=600, ge=1, le=86_400)
     openai_api_key: SecretStr | None = None
     openai_model: str | None = None
     openai_timeout_s: float = Field(default=30, gt=0)

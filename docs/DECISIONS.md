@@ -125,7 +125,7 @@ The prompt requires server-side sessions, configurable absolute and idle timeout
 - Password length: 10 to 128 characters. The minimum is specified. The maximum is an operational limit so hashing cannot be fed an unbounded payload. A breach-list check is optional in the prompt and is not implemented.
 - Application secrets must be at least 32 characters and must not be a known placeholder. Production also requires `SESSION_COOKIE_SECURE=true`, at least one `https://` frontend origin, and rejection of the local example database credential pair.
 - Session tokens and reset tokens are stored only as SHA-256 hashes. Client IP addresses are stored only as HMAC-SHA256 using the application secret. Raw IPs are not stored.
-- CSRF route enforcement is not active yet. The compare and hashing helpers exist. Wiring them to mutating routes is part of identity.
+- CSRF route enforcement is active as of Stage 2. See D-017. The earlier sentence that it was not wired is historical.
 - In-process rate limiting is the v1 mechanism from Section 5. It does not coordinate across processes. No Redis limiter is added.
 - `/docs` and `/openapi.json` are disabled when `APP_ENV=production`.
 
@@ -194,3 +194,31 @@ The platform uses a synchronous SQLAlchemy engine and `Session`. Database handle
 **Status:** Accepted. **Date:** 2026-10-29.
 
 Revision `0001_initial_schema` creates tables with `Base.metadata.create_all` and then installs append-only triggers in explicit SQL. The schema test fails if reflected metadata drifts from the models. A later change is a new revision. This revision stays as is once any non-disposable database has applied it. It was chosen so the migration cannot list a different shape from the models. The table list is still visible in `modules/*/models.py`.
+
+## D-017 — Stage 2 identity, sessions, and workspace context
+
+**Status:** Accepted, with assumed values marked below. **Date:** 2026-10-29.
+
+Stage 2 keeps the synchronous SQLAlchemy session from D-015. The stage prompt's mention of an async engine is not followed; converting the working engine would be a new architecture.
+
+Registration creates the user, workspace (`Africa/Lagos`, `NGN`, onboarding step `company`), owner membership, and workspace settings in one transaction, then a server session. The response sets the session cookie and returns a CSRF token. A failed registration rolls the transaction back. Duplicate emails, including case variants, return `409` with a message that does not say the email is taken. The status code still differs from success, so a caller can observe that the details were rejected.
+
+Login returns the same `401` body for an unknown email, a wrong password, an inactive user, a malformed password hash, and a user with no single owner membership. Unknown and inactive accounts run a dummy Argon2 verification. Login revokes only the session cookie that was presented, then issues a new one. Other devices stay signed in until `POST /api/v1/auth/sessions/revoke`.
+
+Sessions store SHA-256 token and CSRF hashes. Idle timeout uses `last_seen_at` and the injected clock. Absolute timeout uses `expires_at` set at creation and is not extended by activity. Cookies are `HttpOnly`, `SameSite` from settings (default `lax`), `Path=/`, no `Domain`, and `Secure` only when `SESSION_COOKIE_SECURE` is true. Production still refuses to start unless that flag is true.
+
+CSRF is required on unsafe methods for cookie-authenticated routes. `require_csrf` compares the configured header with the session's CSRF hash. `GET /api/v1/auth/csrf` rotates that secret. These routes are the only unsafe exceptions, because they have no session-bound token yet: `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `POST /api/v1/auth/password-resets`, and `POST /api/v1/auth/password-resets/confirm`. A unit test fails if another unsafe `/api/v1` route is neither exempt nor protected.
+
+The workspace id comes from the session user's single owner membership. Zero memberships, or more than one, fail closed with `403`. Client `workspace_id` fields are rejected on write models (`extra=forbid`). Query parameters are not read. Workspace settings in this stage expose notification recipients and cooldown only. Risk-engine fields stay at schema defaults and are not in the API.
+
+Password reset stores a single-use SHA-256 token for `PASSWORD_RESET_TTL_MINUTES` (default 30, assumed). The HTTP request always returns `204` and never returns the token. Email delivery is not implemented; Stage 13 owns SMTP. Until then a person cannot receive a reset token. Confirm revokes every session for that user. Email verification is not implemented. `email_verified_at` stays null, and later notification code must not treat an account as verified.
+
+Signup, login, and password reset use the existing in-process limiter. Defaults are 20 attempts per 10 minutes per socket address, separate buckets (assumed). The limiter does not cross processes. The client address is `request.client.host`, not `X-Forwarded-For`.
+
+Argon2id parameters are settings. Defaults are the library's RFC 9106 low-memory profile: time cost 3, memory 65536 KiB, parallelism 4. Tests lower the cost so the suite can finish; production defaults stay at that profile. No breach-list check is called.
+
+Account tables are not tenant tables. `AccountRepository` and `AuditRepository.append` do not take a `TenantContext`. `create_owner_workspace` creates the tenant and does not accept a client workspace id. Later workspace reads and updates go through `WorkspaceRepository`, which requires `TenantContext`. No migration was added. `0001_initial_schema` was not edited.
+
+Application-layer tenancy is not PostgreSQL row-level security. The full Section 9 isolation suite for products, vendors, orders, imports, sales, alerts, snapshots, explanations, usage, and notifications is a gate for the stages that add those routes. A test already fails if a new non-auth `/api/v1` route has no isolation entry. Settings are covered now.
+
+Email shape is assumed: trimmed, casefolded, one `@`, and a dotted domain. Notification cooldown is 1–168 hours. At most 20 recipient emails are stored. Those bounds are not in the master prompt.

@@ -1,6 +1,6 @@
 # Architecture
 
-**Status:** the boundaries below are the locked design from master-prompt Sections 5–7. Only the backend platform slice is implemented. Everything else in this document is **Proposed** unless a section says **Implemented**.
+**Status:** the boundaries below are the locked design from master-prompt Sections 5–7. The backend platform and Stage 2 identity are implemented. Everything else in this document is **Proposed** unless a section says **Implemented**.
 
 ## System
 
@@ -17,8 +17,9 @@ Not in v1: Redis, Celery, another message broker, microservices, Kubernetes, a c
 Browser (not started)
     |  HTTPS, cookie session, CSRF header on mutations
     v
-FastAPI  /api/v1          Implemented: process, config, probes, error envelope
-    |                     Proposed: identity, catalog, inventory, sales, orders,
+FastAPI  /api/v1          Implemented: process, config, probes, error envelope,
+    |                               identity, sessions, CSRF, current workspace
+    |                     Proposed: catalog, inventory, sales, orders,
     |                               signals, risk, alerts, explanations, notifications
     v
 PostgreSQL 16             Implemented: schema and append-only triggers
@@ -28,7 +29,7 @@ Worker (not started) -----+---- OpenAI (unverified) and FX source (unverified)
 
 Tenancy is enforced in the application: a `TenantContext`, repositories that require it, composite foreign keys `(workspace_id, parent_id)`, and tests that try cross-workspace references. PostgreSQL row-level security is a future option and is not built.
 
-The workspace id used for authorisation will come from the server session, not from a body or URL field. Resource ids will be loaded through tenant-scoped repositories so another workspace's id is a 404. That authorisation path is **not implemented** yet. The schema rules that make cross-workspace foreign keys fail are **Implemented** and covered by database tests when PostgreSQL is available.
+The workspace id used for authorisation comes from the server session, not from a body or URL field. That path is **Implemented** for the current user and workspace settings. Resource ids for later tenant data will be loaded through tenant-scoped repositories so another workspace's id is a 404. Those resource routes are not built. The schema rules that make cross-workspace foreign keys fail are **Implemented** and covered by database tests. PostgreSQL row-level security is still not enabled.
 
 ## Backend layout
 
@@ -40,19 +41,21 @@ The workspace id used for authorisation will come from the server session, not f
 - `db/` — engine, session, metadata, model registry
 - `core/` — password hashing, token hashing, CSRF compare, IP HMAC, tenancy type, errors, JSON logs, in-process rate limiter, pagination, ids
 - `modules/*/models.py` — Section 8 tables
-- `migrations/` — initial revision
-- `backend/tests/` — unit tests and PostgreSQL schema tests
+- `migrations/` — initial revision, unchanged in Stage 2
+- `modules/identity/` and `modules/workspaces/` — registration, sessions, CSRF, current workspace, notification prefs
+- `modules/audit/repository.py` — append-only auth and settings events
+- `backend/tests/` — unit tests, PostgreSQL schema tests, and identity tests
 
-**Not started:** routers, services, repositories for each module, the risk engine, providers, the worker, and the route-level isolation suite.
+**Not started:** catalog, inventory, sales, orders, signals, risk, alerts, explanations, notifications, the worker, and the isolation suite for those future resources.
 
-Routers will validate and authorise. Services will hold business rules and will take a `Clock`. Repositories will be the only code that uses the SQLAlchemy session and will require `TenantContext`. Business code will not call `datetime.now()`.
+Routers validate and authorise. Services hold business rules and take a `Clock`. Workspace repositories are the code that reads tenant rows, and they require `TenantContext`. Account tables are not tenant tables (D-017). Business code does not call `datetime.now()`.
 
 ## API conventions (Proposed, from Section 7)
 
 - JSON under `/api/v1`, except CSV upload which will be multipart
 - Page envelope `{items, page, page_size, total}` with `page_size` at most 100
 - Errors `{error: {code, message, details?, request_id}}`
-- Mutating requests will require the CSRF header once identity exists
+- Mutating cookie-authenticated requests require the CSRF header (D-017). Register, login, and password reset are the documented exceptions.
 - Idempotency for import commit, job enqueue, and alert creation will follow Sections 7 and 10.7. Section 14's further idempotency text is missing and is not guessed.
 
 `GET /health` and `GET /ready` are probes outside `/api/v1` (D-013).

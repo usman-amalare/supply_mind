@@ -63,13 +63,22 @@ Preserved: `readme.Md`, the master prompt, and the product brief. No application
 
 **Not acceptance of this stage:** a working onboarding flow, a calculated risk, or a live email/FX/OpenAI integration.
 
+## Stage 2 — Identity, sessions, CSRF, and workspace context
+
+**Status:** Implemented. **Date:** 2026-10-29.
+
+Registration creates a user, an `Africa/Lagos` / `NGN` workspace, an owner membership, workspace settings, and a server session in one transaction. Login, logout, session rotation, idle and absolute timeouts, and revoke-all are enforced. Session and CSRF secrets are stored as SHA-256 hashes. Cookie-authenticated unsafe routes require the CSRF header, with the four unauthenticated exceptions in D-017. The workspace id comes from the session membership. No new migration was added.
+
+**Evidence:** `docs/API.md`, `docs/SECURITY.md`, D-017, and the command log below. Before these changes, `uv run pytest` was **41 passed**. After them, the same command was **74 passed**, including the Stage 1 schema tests.
+
+**Not acceptance of this stage:** email delivery of password-reset tokens, email verification, catalog data, or the Section 9 isolation suite for resources that do not have routes yet. Application-layer tenancy is not row-level security.
+
 ## Later stages (Proposed, reconstructed)
 
 Do not start a stage until the previous one's acceptance criteria are recorded as passed.
 
 | Stage | Objective | Prerequisites |
 |---|---|---|
-| 2 | Identity, sessions, CSRF on mutations, workspace and owner membership, password reset, audit of auth events | Stage 1 |
 | 3 | Vendors, products, primary/backup links, archive | Stage 2 |
 | 4 | Append-only stock adjustments and ledger balance | Stage 3 |
 | 5 | Orders, delivery, receipt adjustments, vendor lead-time inputs | Stage 4 |
@@ -99,12 +108,15 @@ The product brief's pilot (3–5 businesses for 4 weeks) and the "Naira rate upd
 - No agreed AI monthly cap (D-008).
 - No verified FX provider or rate type (D-002, D-010).
 - No seasonal dates are seeded. Dates must be cited or marked `needs_verification`. None were invented.
-- CSRF is not enforced on routes until Stage 2.
+- Password-reset email is not sent. The token API exists; delivery is Stage 13 (D-017).
+- Email verification is not implemented.
+- The Section 9 isolation suite for products, vendors, orders, imports, sales, alerts, snapshots, explanations, usage, and notifications waits for those routes. Settings are covered.
+- Auth rate limits are in-process only and use the socket address, not a forwarded client IP.
 - `TRUNCATE` on append-only tables is not blocked (D-011).
 
 ## Next valid stage
 
-Stage 2 — identity, sessions, CSRF enforcement on mutating routes, workspace creation, and the owner membership. Do not start frontend screens.
+Stage 3 — vendors, products, primary and backup links, and archive. Do not start frontend screens. New tenant routes must add an isolation test or `tests/unit/test_auth_routes.py` fails.
 
 ## Command log
 
@@ -132,3 +144,21 @@ Schema tests, against PostgreSQL 16:
 Warning that did not fail the run: Starlette reports that `TestClient` on the installed `httpx` is deprecated in favour of a package it calls `httpx2`. No extra package was added for that warning.
 
 `make check`, a pulled Mailpit image, a live OpenAI call, and a live FX call were not run.
+
+### Measured 2026-10-29 — Stage 2
+
+Commands were run from `backend/` unless noted. GNU `make` is still not installed.
+
+- Before identity changes: `uv run pytest` — exit 0. **41 passed**, 1 warning, 18.82s.
+- `uv run ruff check src tests migrations` — exit 0 (`All checks passed`).
+- `uv run ruff format --check src tests migrations` — exit 0 (81 files already formatted).
+- `uv run mypy` — exit 0 (`Success: no issues found in 64 source files`).
+- `uv run bandit -c pyproject.toml -r src/supplymind` — exit 0. No issues identified. 2910 lines of code scanned.
+- `uv run pip-audit` — exit 0. `No known vulnerabilities found`. The local project `supplymind` is not on PyPI and was skipped.
+- `uv run pytest` — exit 0. **74 passed**, 1 warning, 16.45s. This includes `test_migrated_schema_matches_models` and `test_migration_downgrade_and_upgrade` against PostgreSQL 16. No Alembic revision was added. `0001_initial_schema` was not edited. Alembic was not run as a separate CLI outside pytest.
+- From the repository root: `docker compose -f deploy/dev/compose.yml config --quiet` and the same for `deploy/test/compose.yml` — exit 0.
+- `make --version` — failed. PowerShell reported `make` is not recognized. `make check` was not run.
+
+The same Starlette `TestClient` / `httpx` deprecation warning remains. No package was added for it. No dependency was added; `uv.lock` was not changed.
+
+An intermediate identity pytest run failed 5 tests because a second registration in the same client sent the first session cookie and revoked it. The tests were corrected. The 74-passed run is the one above.

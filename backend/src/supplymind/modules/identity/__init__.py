@@ -1,1 +1,1 @@
-"""Accounts, sessions, and password reset. HTTP routes are not implemented."""
+"""Accounts, sessions, and password-reset tokens."""

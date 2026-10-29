@@ -15,10 +15,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from supplymind import __version__
 from supplymind.api.router import api_router
+from supplymind.clock import Clock, SystemClock
 from supplymind.config import Settings, get_settings
 from supplymind.core.errors import AppError, error_envelope
 from supplymind.core.logging import configure_logging, request_id_var
 from supplymind.core.middleware import RequestIdMiddleware, SecurityHeadersMiddleware
+from supplymind.core.rate_limit import InMemoryRateLimiter
 from supplymind.db.session import make_engine
 
 _logger = logging.getLogger("supplymind.errors")
@@ -46,7 +48,7 @@ def _request_id(request: Request) -> str:
     return request_id_var.get()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, clock: Clock | None = None) -> FastAPI:
     resolved = settings if settings is not None else get_settings()
     configure_logging(resolved.log_level)
     docs_url = "/docs" if resolved.app_env != "production" else None
@@ -70,6 +72,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved
+    app.state.clock = clock or SystemClock()
+    app.state.rate_limiter = InMemoryRateLimiter(app.state.clock)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
