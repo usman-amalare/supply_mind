@@ -610,10 +610,4 @@ For substantial changes, document the implementation, tests, known limitations, 
 
 ---
 
-## License
-
-No license has been specified yet. Until a license is added to the repository, do not assume that the project is open source or that unrestricted reuse is permitted.
-
----
-
 **SupplyMind — See inventory risk before it becomes a stock-out.**
